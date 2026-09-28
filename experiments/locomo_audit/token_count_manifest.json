@@ -1,0 +1,126 @@
+{
+  "source_url": "https://raw.githubusercontent.com/snap-research/locomo/3eb6f2c585f5e1699204e3c3bdf7adc5c28cb376/data/locomo10.json",
+  "source_commit": "3eb6f2c585f5e1699204e3c3bdf7adc5c28cb376",
+  "source_sha256": "79fa87e90f04081343b8c8debecb80a9a6842b76a7aa537dc9fdf651ea698ff4",
+  "tiktoken_version": "0.13.0",
+  "encoding": "cl100k_base",
+  "count_type": "custom full-history text serialization; not API usage",
+  "history_tokens_includes": [
+    "chronological session dates",
+    "speaker names",
+    "dialogue text",
+    "nonempty BLIP image captions",
+    "format labels and whitespace"
+  ],
+  "history_tokens_excludes": [
+    "QA questions and answers",
+    "system and task instructions",
+    "chat protocol overhead",
+    "evidence IDs",
+    "JSON structure",
+    "image URLs and image token charges",
+    "observations",
+    "session summaries",
+    "event summaries"
+  ],
+  "dialogue_text_tokens_format": "all turn.text values in chronological order, joined with one newline",
+  "history_tokens_format": "For each chronological session append 'DATE: {date}\\nCONVERSATION:\\n'; for each turn append '{speaker}: {text}\\n' and, if a nonempty blip_caption exists, '[Image caption: {caption}]\\n'; after each session append '\\n'.",
+  "question_locator": "sample_id + qa_index_0based (zero-based position in that sample's qa array)",
+  "category_ids": {
+    "1": "multi-hop",
+    "2": "temporal",
+    "3": "open-domain",
+    "4": "single-hop",
+    "5": "adversarial"
+  },
+  "conversation_count": 10,
+  "question_count": 1986,
+  "conversation_mean_history_tokens": 20823.7,
+  "question_weighted_mean_history_tokens": 21247.495468277946,
+  "conversation_mean_dialogue_text_tokens": 16641.7,
+  "question_weighted_mean_dialogue_text_tokens": 16952.01510574018,
+  "min_history_tokens": 12741,
+  "max_history_tokens": 24308,
+  "conversations": [
+    {
+      "sample_id": "conv-26",
+      "sessions": 19,
+      "turns": 419,
+      "questions": 199,
+      "dialogue_text_tokens": 13064,
+      "history_tokens": 16743
+    },
+    {
+      "sample_id": "conv-30",
+      "sessions": 19,
+      "turns": 369,
+      "questions": 105,
+      "dialogue_text_tokens": 10174,
+      "history_tokens": 12741
+    },
+    {
+      "sample_id": "conv-41",
+      "sessions": 32,
+      "turns": 663,
+      "questions": 193,
+      "dialogue_text_tokens": 20069,
+      "history_tokens": 24308
+    },
+    {
+      "sample_id": "conv-42",
+      "sessions": 29,
+      "turns": 629,
+      "questions": 260,
+      "dialogue_text_tokens": 16610,
+      "history_tokens": 21121
+    },
+    {
+      "sample_id": "conv-43",
+      "sessions": 29,
+      "turns": 680,
+      "questions": 242,
+      "dialogue_text_tokens": 19449,
+      "history_tokens": 24281
+    },
+    {
+      "sample_id": "conv-44",
+      "sessions": 28,
+      "turns": 675,
+      "questions": 158,
+      "dialogue_text_tokens": 18826,
+      "history_tokens": 23815
+    },
+    {
+      "sample_id": "conv-47",
+      "sessions": 31,
+      "turns": 689,
+      "questions": 190,
+      "dialogue_text_tokens": 18437,
+      "history_tokens": 22324
+    },
+    {
+      "sample_id": "conv-48",
+      "sessions": 30,
+      "turns": 681,
+      "questions": 239,
+      "dialogue_text_tokens": 16645,
+      "history_tokens": 22172
+    },
+    {
+      "sample_id": "conv-49",
+      "sessions": 25,
+      "turns": 509,
+      "questions": 196,
+      "dialogue_text_tokens": 14593,
+      "history_tokens": 17976
+    },
+    {
+      "sample_id": "conv-50",
+      "sessions": 30,
+      "turns": 568,
+      "questions": 204,
+      "dialogue_text_tokens": 18550,
+      "history_tokens": 22756
+    }
+  ]
+}

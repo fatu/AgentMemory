@@ -1,0 +1,6 @@
+# Part A outputs stay local
+locomo/runs/
+longmemeval/runs/
+longmemeval/__pycache__/
+beam/runs/
+beam/__pycache__/

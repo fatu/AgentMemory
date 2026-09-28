@@ -1,0 +1,10 @@
+# vendored benchmark / memory-system checkouts (clone per README; never redistributed)
+code-repo/
+# run outputs, dataset caches, downloaded data
+experiments/*/runs/
+experiments/*/data/
+experiments/*/cache/
+experiments/part_a/*/runs/
+**/__pycache__/
+*.pyc
+.venv/

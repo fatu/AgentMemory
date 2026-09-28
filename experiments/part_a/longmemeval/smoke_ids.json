@@ -1,0 +1,21 @@
+{
+  "ids": [
+    "e47becba",
+    "7161e7e2",
+    "8a2466db",
+    "0a995998",
+    "gpt4_59149c77",
+    "6a1eabeb",
+    "0862e8bf_abs"
+  ],
+  "by_type": {
+    "single-session-user": "e47becba",
+    "_abs": "0862e8bf_abs",
+    "multi-session": "0a995998",
+    "single-session-preference": "8a2466db",
+    "temporal-reasoning": "gpt4_59149c77",
+    "knowledge-update": "6a1eabeb",
+    "single-session-assistant": "7161e7e2"
+  },
+  "source": "longmemeval_s_cleaned.json"
+}

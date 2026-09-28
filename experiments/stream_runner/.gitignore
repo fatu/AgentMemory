@@ -1,0 +1,5 @@
+# stream runner outputs stay local
+runs/
+cache/
+data/
+.venv/
