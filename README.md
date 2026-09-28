@@ -46,7 +46,7 @@ mkdir -p code-repo && cd code-repo
 git clone https://github.com/mem0ai/memory-benchmarks
 git clone https://github.com/snap-research/locomo        && git -C locomo checkout 3eb6f2c
 git clone https://github.com/xiaowu0162/LongMemEval      && git -C LongMemEval checkout 9e0b455
-git clone https://github.com/Mohammadta/BEAM             && git -C BEAM checkout b2da22e
+git clone https://github.com/mohammadtavakoli78/BEAM && git -C BEAM checkout b2da22e
 git clone https://github.com/WujiangXu/AgenticMemory A-mem && git -C A-mem checkout 0c8039f
 git clone https://github.com/ace-agent/ace               && git -C ace checkout 82709de
 # LongMemEval data (not in its repo): huggingface-cli download xiaowu0162/longmemeval-cleaned \
