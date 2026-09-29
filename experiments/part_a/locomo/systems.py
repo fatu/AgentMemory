@@ -92,9 +92,9 @@ class Hindsight:
     name = "hindsight"
     uses_cache = False
 
-    def __init__(self, client, bank_id: str, marker: Path, reflect: bool = False, cap: int = CAP):
+    def __init__(self, client, bank_id: str, marker: Path, reflect: bool = False, cap: int = CAP, backbone: str | None = None):
         from hindsight_store import HindsightStore, parse_ts
-        self.store, self.client, self.cap, self._ts = HindsightStore(bank_id, client), client, cap, parse_ts
+        self.store, self.client, self.cap, self._ts = HindsightStore(bank_id, client, backbone=backbone), client, cap, parse_ts
         self.marker = Path(marker)                          # written after a COMPLETE ingestion → resume skips it
         self.kind = "reader" if reflect else "context"
         if reflect:
@@ -133,5 +133,5 @@ def make_system(name: str, *, client=None, embedder=None, state_dir: Path | None
         assert client is not None and state_dir is not None
         # marker keyed by bank id, shared across run ids: the recall and reflect rows reuse one bank
         return Hindsight(client, bank_id, marker=Path(state_dir).parents[1] / "_hindsight" / bank_id,
-                         reflect=(name == "hindsight-reflect"))
+                         reflect=(name == "hindsight-reflect"), backbone=bank_id.rsplit("-", 1)[-1])
     raise KeyError(name)

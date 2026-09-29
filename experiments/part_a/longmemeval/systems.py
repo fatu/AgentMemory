@@ -154,7 +154,7 @@ class Hindsight:
 
     def ingest(self, entry):
         qid = entry["question_id"]
-        self.store = self._Store(f"lme-{qid}-{self.backbone}", self.client)
+        self.store = self._Store(f"lme-{qid}-{self.backbone}", self.client, backbone=self.backbone)
         self.store.fresh()
         for k, (date, sid, turns) in enumerate(sessions(entry)):
             self.client.current_row_id = f"ingest:{qid}:{k}"

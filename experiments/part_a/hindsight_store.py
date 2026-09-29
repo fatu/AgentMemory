@@ -44,9 +44,43 @@ def parse_ts(s: str | None) -> datetime | None:
         return None
 
 
+def ensure_server(url: str = HINDSIGHT_URL, backbone: str | None = None, wait_s: int = 240) -> str:
+    """Fail fast if no Hindsight server answers at `url`. With HINDSIGHT_AUTOSTART=1 (and a
+    backbone), spawn part_a/hindsight_server.sh <backbone> detached and wait for health — a
+    convenience for single-backbone sessions; the normal lifecycle is a long-lived server per
+    backbone started by hand (it owns an embedded Postgres and the memory banks)."""
+    import subprocess
+    from hindsight_client import Hindsight
+
+    def alive() -> str | None:
+        try:
+            v = Hindsight(base_url=url, timeout=10.0).get_version()
+            return getattr(v, "version", None) or str(v)
+        except Exception:                                # noqa: BLE001
+            return None
+
+    v = alive()
+    if v:
+        return v
+    if os.environ.get("HINDSIGHT_AUTOSTART") == "1" and backbone:
+        script = Path(__file__).resolve().parent / "hindsight_server.sh"
+        log = Path(os.environ.get("HINDSIGHT_LOG", f"/tmp/hindsight_{backbone}.log"))
+        subprocess.Popen([str(script), backbone], stdout=log.open("a"), stderr=subprocess.STDOUT,
+                         start_new_session=True)
+        for _ in range(wait_s // 5):
+            time.sleep(5)
+            v = alive()
+            if v:
+                return v
+        raise RuntimeError(f"Hindsight server did not become healthy within {wait_s}s (log: {log})")
+    raise RuntimeError(f"Hindsight server not reachable at {url} — start it with "
+                       f"experiments/part_a/hindsight_server.sh <sonnet5|qwen27b> (or set HINDSIGHT_AUTOSTART=1)")
+
+
 class HindsightStore:
-    def __init__(self, bank_id: str, log_client, url: str = HINDSIGHT_URL):
+    def __init__(self, bank_id: str, log_client, url: str = HINDSIGHT_URL, backbone: str | None = None):
         from hindsight_client import Hindsight
+        self.server_version = ensure_server(url, backbone)
         self.h = Hindsight(base_url=url, timeout=600.0)
         self.bank_id = bank_id
         self.log = log_client                            # our LLMClient: only its _log() is used
@@ -109,12 +143,7 @@ class HindsightStore:
 
     # ------------------------------------------------------------ provenance
     def info(self) -> dict:
-        try:
-            v = self.h.get_version()
-            version = getattr(v, "version", None) or str(v)
-        except Exception as e:                           # noqa: BLE001
-            version = f"unknown ({e!r})"
-        return {"hindsight_url": HINDSIGHT_URL, "hindsight_server_version": version, "bank_id": self.bank_id,
+        return {"hindsight_url": HINDSIGHT_URL, "hindsight_server_version": self.server_version, "bank_id": self.bank_id,
                 "recall_budget": RECALL_BUDGET, "recall_max_tokens": RECALL_MAX_TOKENS,
                 "server_llm": {k: os.environ.get(k) for k in ("HINDSIGHT_API_LLM_PROVIDER", "HINDSIGHT_API_LLM_MODEL",
                                                              "HINDSIGHT_API_LLM_BASE_URL", "HINDSIGHT_API_EMBEDDINGS_PROVIDER",

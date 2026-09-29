@@ -158,7 +158,7 @@ class Hindsight:
             self.kind, self.name = "reader", "hindsight-reflect"
 
     def ingest(self, chat, conv_id: str = "conv", resume: bool = True):
-        self.store = self._Store(f"beam-{conv_id}-{self.backbone}", self.client)
+        self.store = self._Store(f"beam-{conv_id}-{self.backbone}", self.client, backbone=self.backbone)
         self.marker = self.marker_root / self.store.bank_id
         if resume and self.marker.exists() and self.store.exists():
             return False
