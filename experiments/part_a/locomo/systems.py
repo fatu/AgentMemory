@@ -9,6 +9,7 @@ from pathlib import Path
 
 STREAM_RUNNER = Path(__file__).resolve().parents[2] / "stream_runner"
 sys.path.insert(0, str(STREAM_RUNNER))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))          # hindsight_store.py (part_a/)
 
 from memory.base import CAP, count_tokens, fit_entries          # noqa: E402
 from locomo_data import history_text, turns_as_documents, session_ids, session_text  # noqa: E402
@@ -83,7 +84,44 @@ class Mem0:
         return -1                                           # read from calls.jsonl (tag=memory, row ingest:*)
 
 
-def make_system(name: str, *, client=None, embedder=None, state_dir: Path | None = None):
+class Hindsight:
+    """Hindsight (step 9b): one bank per conversation, one retain() per session (official
+    session text, session date as the event timestamp). `hindsight` = recall() fitted under
+    the cap → OUR answer prompt; `hindsight-reflect` = Hindsight's own reader answers
+    (reported separately — not comparable under the cap)."""
+    name = "hindsight"
+    uses_cache = False
+
+    def __init__(self, client, bank_id: str, marker: Path, reflect: bool = False, cap: int = CAP):
+        from hindsight_store import HindsightStore, parse_ts
+        self.store, self.client, self.cap, self._ts = HindsightStore(bank_id, client), client, cap, parse_ts
+        self.marker = Path(marker)                          # written after a COMPLETE ingestion → resume skips it
+        self.kind = "reader" if reflect else "context"
+        if reflect:
+            self.name = "hindsight-reflect"
+
+    def ingest(self, conv):
+        if self.marker.exists() and self.store.exists():
+            return                                          # resume: sessions already retained
+        self.store.fresh()
+        for i in session_ids(conv):
+            self.client.current_row_id = f"ingest:s{i}"
+            self.store.retain(session_text(conv, i), timestamp=self._ts(conv["conversation"][f"session_{i}_date_time"]),
+                              context=f"session {i}", document_id=f"s{i}", row_id=f"ingest:s{i}")
+        self.marker.parent.mkdir(parents=True, exist_ok=True)
+        self.marker.write_text(self.store.bank_id)
+
+    def context_for(self, question):
+        return self.store.recall(question, cap=self.cap)
+
+    def answer(self, question, row_id):
+        return self.store.reflect(question, row_id=row_id)
+
+    def ingest_calls(self):
+        return -1
+
+
+def make_system(name: str, *, client=None, embedder=None, state_dir: Path | None = None, bank_id: str = "locomo"):
     if name == "full":
         return FullContext()
     if name == "bm25":
@@ -91,4 +129,9 @@ def make_system(name: str, *, client=None, embedder=None, state_dir: Path | None
     if name == "mem0":
         assert client is not None and embedder is not None and state_dir is not None
         return Mem0(client, embedder, state_dir)
+    if name in ("hindsight", "hindsight-reflect"):
+        assert client is not None and state_dir is not None
+        # marker keyed by bank id, shared across run ids: the recall and reflect rows reuse one bank
+        return Hindsight(client, bank_id, marker=Path(state_dir).parents[1] / "_hindsight" / bank_id,
+                         reflect=(name == "hindsight-reflect"))
     raise KeyError(name)

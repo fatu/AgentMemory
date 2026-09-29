@@ -12,6 +12,7 @@ from pathlib import Path
 
 STREAM_RUNNER = Path(__file__).resolve().parents[2] / "stream_runner"
 sys.path.insert(0, str(STREAM_RUNNER))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))          # hindsight_store.py (part_a/)
 
 from memory.base import CAP, count_tokens, fit_entries                      # noqa: E402
 from beam_data import messages, pairs, turns                                 # noqa: E402
@@ -140,6 +141,43 @@ class AMem(_PerConversationStore):
         return self.m.retrieve(question)
 
 
+class Hindsight:
+    """Hindsight (step 9b): one bank per conversation, one retain() per turn (official
+    turn_chunk text; the batch/turn time anchor as timestamp when present)."""
+    name = "hindsight"
+    kind = "context"
+    uses_cache = False
+    ingest_unit = "turn"
+
+    def __init__(self, client, backbone: str, state_dir: Path, reflect: bool = False, cap: int = CAP):
+        from hindsight_store import HindsightStore, parse_ts
+        self._Store, self._ts, self.client, self.backbone, self.cap = HindsightStore, parse_ts, client, backbone, cap
+        self.marker_root = Path(state_dir).parents[1] / "_hindsight"     # runs/_hindsight/<bank_id>, shared across run ids
+        self.truncated = False
+        if reflect:
+            self.kind, self.name = "reader", "hindsight-reflect"
+
+    def ingest(self, chat, conv_id: str = "conv", resume: bool = True):
+        self.store = self._Store(f"beam-{conv_id}-{self.backbone}", self.client)
+        self.marker = self.marker_root / self.store.bank_id
+        if resume and self.marker.exists() and self.store.exists():
+            return False
+        self.store.fresh()
+        for k, t in enumerate(turns(chat)):
+            self.client.current_row_id = f"ingest:{conv_id}:{k}"
+            self.store.retain(t["text"], timestamp=self._ts(t["time_anchor"]), context=f"batch {t['batch']} turn {t['turn']}",
+                              document_id=f"b{t['batch']}t{t['turn']}", row_id=f"ingest:{conv_id}:{k}")
+        self.marker.parent.mkdir(parents=True, exist_ok=True)
+        self.marker.write_text(self.store.bank_id)
+        return True
+
+    def context_for(self, question):
+        return self.store.recall(question, cap=self.cap)
+
+    def answer(self, question, row_id):
+        return self.store.reflect(question, row_id=row_id)
+
+
 def make_system(name: str, *, client=None, embedder=None, state_dir: Path | None = None,
                 max_context: int | None = None, backbone: str = ""):
     if name == "full":
@@ -149,4 +187,7 @@ def make_system(name: str, *, client=None, embedder=None, state_dir: Path | None
     if name in ("mem0", "amem"):
         assert client is not None and embedder is not None and state_dir is not None
         return (Mem0 if name == "mem0" else AMem)(client, embedder, state_dir)
+    if name in ("hindsight", "hindsight-reflect"):
+        assert client is not None and state_dir is not None
+        return Hindsight(client, backbone, state_dir, reflect=(name == "hindsight-reflect"))
     raise KeyError(name)

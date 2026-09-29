@@ -90,7 +90,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--group", default="100K", choices=["100K", "1M"])
     ap.add_argument("--conv", default="1")
-    ap.add_argument("--system", choices=["full", "bm25", "mem0", "amem"], required=True)
+    ap.add_argument("--system", choices=["full", "bm25", "mem0", "amem", "hindsight", "hindsight-reflect"], required=True)
     ap.add_argument("--backbone", choices=["sonnet5", "qwen27b"], required=True)
     ap.add_argument("--abilities", nargs="+", default=None, help="subset of the 10 ability keys")
     ap.add_argument("--no-judge", action="store_true")
@@ -119,7 +119,7 @@ def main():
                          max_context=ctx_limit, backbone=a.backbone)
 
     t_ing = time.perf_counter()
-    if a.system in ("mem0", "amem"):
+    if a.system in ("mem0", "amem", "hindsight", "hindsight-reflect"):
         system.ingest(chat, conv_id=conv_id, resume=True)
     else:
         system.ingest(chat)
@@ -141,7 +141,8 @@ def main():
         "gen_max_tokens": GEN_MAX_TOKENS, "cap_tokens": CAP, "max_context": ctx_limit,
         "history_tokens_o200k": history_tokens, "truncated": bool(getattr(system, "truncated", False)),
         "embedder": (embedder.model_name if embedder else None), "embedder_backend": (embedder.backend if embedder else None),
-        **ingest, "n_questions": len(questions), "ts": time.time(),
+        **ingest, "n_questions": len(questions),
+        "hindsight": (system.store.info() if hasattr(system, "store") else None), "ts": time.time(),
     }, indent=2))
 
     results_path = out / "results.csv"
@@ -178,6 +179,9 @@ def main():
                         system.factor += 0.15
                         system.ingest(chat)
                         print(f"  prompt too long for {a.backbone}; re-pruned with token factor {system.factor:.2f} (truncated={system.truncated})")
+            elif system.kind == "reader":                          # hindsight-reflect: its own reader
+                block_tokens = 0
+                pred = system.answer(q["question"], row_id)
             else:
                 context = system.context_for(q["question"])
                 block_tokens = count_tokens(context)

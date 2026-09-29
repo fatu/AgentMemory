@@ -90,7 +90,7 @@ def _ingest_calls_from_log(path: Path) -> list[dict]:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--conv", default="conv-26")
-    ap.add_argument("--system", choices=["full", "bm25", "mem0"], required=True)
+    ap.add_argument("--system", choices=["full", "bm25", "mem0", "hindsight", "hindsight-reflect"], required=True)
     ap.add_argument("--backbone", choices=["sonnet5", "qwen27b"], required=True)
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--no-judge", action="store_true")
@@ -105,7 +105,8 @@ def main():
     client = LLMClient(a.backbone, run_id=run_id, log_path=out / "calls.jsonl")
     judge_client = client if a.backbone == JUDGE_BACKBONE else LLMClient(JUDGE_BACKBONE, run_id=run_id, log_path=out / "calls.jsonl")
     embedder = Embedder() if a.system == "mem0" else None
-    system = make_system(a.system, client=client, embedder=embedder, state_dir=out / "mem0")
+    system = make_system(a.system, client=client, embedder=embedder, state_dir=out / "mem0",
+                         bank_id=f"locomo-{a.conv}-{a.backbone}")
 
     t_ing = time.perf_counter()
     system.ingest(conv)
@@ -124,6 +125,7 @@ def main():
         "history_tokens_o200k": count_tokens(system.context_for("") if a.system == "full" else ""),
         "ingest_seconds": ingest_s, "ingest_tokens_in": _sum(ingest_calls, "memory", "in") + _sum(ingest_calls, "memory", "cache_read") + _sum(ingest_calls, "memory", "cache_write"),
         "ingest_tokens_out": _sum(ingest_calls, "memory", "out"), "ingest_calls": len(ingest_calls),
+        "hindsight": (system.store.info() if hasattr(system, "store") else None),
         "ts": time.time(),
     }, indent=2))
     print(f"ingested {a.conv} with {a.system}: {ingest_s}s, {len(ingest_calls)} memory calls")
@@ -147,14 +149,18 @@ def main():
             client.current_row_id = row_id
             t0 = time.perf_counter()
             qtext, template, c5 = build_question(qa, qa_key=f"{a.conv}:{idx}")
-            context = system.context_for(qa["question"])
-            block_tokens = count_tokens(context)
-            if a.system != "full":
-                assert block_tokens <= CAP, (idx, block_tokens)
-            user = template.format(qtext).strip()
-            pred = (client.complete(context, user, tag="agent", row_id=row_id, max_tokens=64,
-                                    temperature=0.0, thinking=False,
-                                    cache_system=getattr(system, "uses_cache", False)) or "").strip()
+            if getattr(system, "kind", "context") == "reader":          # hindsight-reflect: its own reader answers
+                block_tokens = 0
+                pred = (system.answer(qtext, row_id) or "").strip()
+            else:
+                context = system.context_for(qa["question"])
+                block_tokens = count_tokens(context)
+                if a.system != "full":
+                    assert block_tokens <= CAP, (idx, block_tokens)
+                user = template.format(qtext).strip()
+                pred = (client.complete(context, user, tag="agent", row_id=row_id, max_tokens=64,
+                                        temperature=0.0, thinking=False,
+                                        cache_system=getattr(system, "uses_cache", False)) or "").strip()
             g = gold(qa)
             s_off = official_score(qa["category"], pred, g)
             s_judge, label = None, ""

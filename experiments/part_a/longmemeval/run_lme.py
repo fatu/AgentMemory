@@ -81,7 +81,7 @@ def max_context(client, backbone: str) -> int | None:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--system", choices=["full", "bm25", "mem0", "amem"], required=True)
+    ap.add_argument("--system", choices=["full", "bm25", "mem0", "amem", "hindsight", "hindsight-reflect"], required=True)
     ap.add_argument("--backbone", choices=["sonnet5", "qwen27b"], required=True)
     ap.add_argument("--smoke", action="store_true", help="the pinned 7-question set (smoke_ids.json)")
     ap.add_argument("--ids", default=None, help="JSON file with {'ids': [...]} or a list")
@@ -123,6 +123,7 @@ def main():
         "embedder": (embedder.model_name if embedder else None),
         "embedder_backend": (embedder.backend if embedder else None),
         "question_ids": [e["question_id"] for e in entries], "n_questions": len(entries),
+        "hindsight": (system.store.info() if hasattr(system, "store") else ("pending first ingest" if a.system.startswith("hindsight") else None)),
         "ts": time.time(),
     }, indent=2))
 
@@ -149,13 +150,17 @@ def main():
             ing = [c for c in client.calls if str(c["row_id"]).startswith(f"ingest:{qid}:")]
             # ---- answer
             client.current_row_id = qid
-            context = system.context_for(e["question"])
-            block_tokens = count_tokens(context)
-            if a.system != "full":
-                assert block_tokens <= CAP, (qid, block_tokens)
-            user = ANSWER_USER.format(context, e["question_date"], e["question"])
-            pred = (client.complete(ANSWER_SYSTEM, user, tag="agent", row_id=qid, max_tokens=GEN_MAX_TOKENS,
-                                    temperature=0.0, thinking=False) or "").strip()
+            if getattr(system, "kind", "context") == "reader":          # hindsight-reflect: its own reader
+                block_tokens = 0
+                pred = (system.answer(f"Current Date: {e['question_date']}\nQuestion: {e['question']}", qid) or "").strip()
+            else:
+                context = system.context_for(e["question"])
+                block_tokens = count_tokens(context)
+                if a.system != "full":
+                    assert block_tokens <= CAP, (qid, block_tokens)
+                user = ANSWER_USER.format(context, e["question_date"], e["question"])
+                pred = (client.complete(ANSWER_SYSTEM, user, tag="agent", row_id=qid, max_tokens=GEN_MAX_TOKENS,
+                                        temperature=0.0, thinking=False) or "").strip()
             # ---- judge
             g = gold(e)
             s_judge, label, fa = None, "", ""

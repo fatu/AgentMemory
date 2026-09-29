@@ -11,6 +11,7 @@ from pathlib import Path
 
 STREAM_RUNNER = Path(__file__).resolve().parents[2] / "stream_runner"
 sys.path.insert(0, str(STREAM_RUNNER))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))          # hindsight_store.py (part_a/)
 
 from memory.base import CAP, count_tokens                                   # noqa: E402
 from lme_data import (full_history, history_string, rounds, sessions, session_plain,   # noqa: E402
@@ -135,6 +136,43 @@ class AMem(_PerQuestionStore):
         return self.m.retrieve(question)
 
 
+class Hindsight:
+    """Hindsight (step 9b): one bank per QUESTION (each question has its own haystack), one
+    retain() per session with the session date as the event timestamp; recall() fitted under
+    the cap → our prompt (`hindsight`), or Hindsight's own reader (`hindsight-reflect`)."""
+    name = "hindsight"
+    uses_cache = False
+    ingest_unit = "session"
+
+    def __init__(self, client, backbone: str, reflect: bool = False, cap: int = CAP):
+        from hindsight_store import HindsightStore, parse_ts
+        self._Store, self._ts, self.client, self.backbone, self.cap = HindsightStore, parse_ts, client, backbone, cap
+        self.kind = "reader" if reflect else "context"
+        self.truncated = False
+        if reflect:
+            self.name = "hindsight-reflect"
+
+    def ingest(self, entry):
+        qid = entry["question_id"]
+        self.store = self._Store(f"lme-{qid}-{self.backbone}", self.client)
+        self.store.fresh()
+        for k, (date, sid, turns) in enumerate(sessions(entry)):
+            self.client.current_row_id = f"ingest:{qid}:{k}"
+            self.store.retain(session_plain(date, turns), timestamp=self._ts(date), context=f"session {sid}",
+                              document_id=sid, row_id=f"ingest:{qid}:{k}")
+        self.question_date = entry.get("question_date")
+
+    def context_for(self, question):
+        return self.store.recall(question, query_timestamp=_iso(self._ts(self.question_date)), cap=self.cap)
+
+    def answer(self, question, row_id):
+        return self.store.reflect(question, row_id=row_id)
+
+
+def _iso(dt):
+    return dt.isoformat() if dt else None
+
+
 def make_system(name: str, *, client=None, embedder=None, state_root: Path | None = None,
                 max_context: int | None = None, backbone: str = ""):
     if name == "full":
@@ -144,4 +182,7 @@ def make_system(name: str, *, client=None, embedder=None, state_root: Path | Non
     if name in ("mem0", "amem"):
         assert client is not None and embedder is not None and state_root is not None
         return (Mem0 if name == "mem0" else AMem)(client, embedder, state_root)
+    if name in ("hindsight", "hindsight-reflect"):
+        assert client is not None
+        return Hindsight(client, backbone, reflect=(name == "hindsight-reflect"))
     raise KeyError(name)
