@@ -92,5 +92,6 @@ def build_question(qa: dict, qa_key: str) -> tuple[str, str, dict]:
 
 
 def gold(qa: dict) -> str:
-    """Gold for scoring: cat 5 has no gold answer (the official scorer checks the abstention phrase)."""
-    return qa.get("answer") if qa["category"] != 5 else NOT_MENTIONED
+    """Gold for scoring: cat 5 has no gold answer (the official scorer checks the abstention phrase).
+    Some LoCoMo answers are stored as integers — the official scorer expects a string."""
+    return str(qa.get("answer")) if qa["category"] != 5 else NOT_MENTIONED

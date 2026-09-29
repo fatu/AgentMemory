@@ -104,6 +104,7 @@ class Judge:
     def __init__(self, client):
         self.client = client
         self.calls = 0
+        self.equiv_log: list[dict] = []          # every alignment decision (ref, line, yes) — judge audit
 
     def _nugget(self, item: str, response: str, row_id: str) -> tuple[float | None, str]:
         prompt = unified_llm_judge_base_prompt.replace("<rubric_item>", item).replace("<llm_response>", response)
@@ -118,9 +119,12 @@ class Judge:
 
     def _equivalent(self, first: str, second: str, row_id: str) -> bool:
         raw = self.client.complete(EQUIV_SYSTEM, EQUIV_USER.format(first=first, second=second), tag="judge",
-                                   row_id=row_id, max_tokens=5, temperature=0.0, thinking=False) or ""
+                                   row_id=row_id, max_tokens=10, temperature=0.0, thinking=False) or ""
         self.calls += 1
-        return "yes" in raw.lower()
+        verdict = raw.lower().replace("*", "").strip()          # "**YES**" / "Yes." / "\nNO" → yes|no
+        yes = verdict.startswith("yes")                          # official: "yes" in response.lower()
+        self.equiv_log.append({"row_id": row_id, "ref": first, "line": second, "raw": raw, "yes": yes})
+        return yes
 
     def _align_with_llm(self, reference: List[str], system: List[str], row_id: str) -> Tuple[List[str], List[str]]:
         """align_with_llm (compute_metrics.py:136-162)."""
@@ -143,6 +147,7 @@ class Judge:
         """Returns {score, llm_judge_score, tau_norm, f1, n_nuggets, judge_calls, nugget_scores,
         parse_fails}; `score` is the field the official report aggregates for the ability."""
         c0 = self.calls
+        e0 = len(self.equiv_log)
         nuggets, fails, raws = [], 0, []
         for item in rubric:
             s, raw = self._nugget(item, response, row_id)
@@ -162,4 +167,5 @@ class Judge:
         else:
             out["score"] = llm_judge
         out["judge_calls"] = self.calls - c0
+        out["equiv"] = self.equiv_log[e0:]
         return out

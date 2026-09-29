@@ -189,6 +189,9 @@ def main():
                  "n_nuggets": len(q["rubric"]), "judge_calls": 0, "parse_fails": 0}
             if not a.no_judge:
                 j = judge.score(ability=q["ability"], rubric=q["rubric"], response=pred, row_id=row_id)
+            with (out / "judge_log.jsonl").open("a") as jl:       # raw judge outputs per row (E4 audit)
+                jl.write(json.dumps({"row_id": row_id, "nuggets": q["rubric"], "nugget_raw": j.get("raw", []),
+                                     "equiv": j.get("equiv", [])}) + "\n")
             calls = [c for c in client.calls + (judge_client.calls if judge_client is not client else []) if c["row_id"] == row_id]
             row = {
                 "part": "A", "benchmark": "beam", "group": a.group, "conv": a.conv, "ability": q["ability"], "q_idx": q["idx"],
