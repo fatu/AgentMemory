@@ -1,0 +1,3 @@
+# SWE stream outputs stay local (internal benchmark data never leaves runs/)
+runs/
+__pycache__/

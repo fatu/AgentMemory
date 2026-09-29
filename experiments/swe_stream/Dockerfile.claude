@@ -1,0 +1,15 @@
+# Derived image for the execution stream: FROM your benchmark's runtime image (toolchain +
+# offline dependency cache) plus Node.js, Claude Code (pinned) and our runner deps.
+# Build:  docker build -f Dockerfile.claude --build-arg BASE=<benchmark-image:tag> -t swe-stream .
+ARG BASE
+FROM ${BASE}
+ARG CLAUDE_CODE_VERSION=2.1.272
+ARG NODE_VERSION=20.18.0
+RUN curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz -o /tmp/node.tar.xz \
+ && mkdir -p /opt/node && tar -xJf /tmp/node.tar.xz -C /opt/node --strip-components=1 && rm /tmp/node.tar.xz
+ENV PATH=/opt/node/bin:$PATH DISABLE_AUTOUPDATER=1 DISABLE_TELEMETRY=1 MEM0_TELEMETRY=False
+RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} \
+ && python3 -m pip install --no-cache-dir tiktoken openai anthropic numpy
+# our code is mounted at run time:  -v <repo>/experiments:/wp/experiments   (stream_runner, swe_stream)
+# the task set:                     -v <tasks>:/tasks:ro
+WORKDIR /wp/experiments/swe_stream

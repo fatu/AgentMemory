@@ -85,6 +85,8 @@ def main():
     ap.add_argument("--backbone", choices=["sonnet5", "qwen27b"], required=True)
     ap.add_argument("--smoke", action="store_true", help="the pinned 7-question set (smoke_ids.json)")
     ap.add_argument("--ids", default=None, help="JSON file with {'ids': [...]} or a list")
+    ap.add_argument("--slice", type=int, default=None, choices=[20, 50, 100, 150],
+                    help="a frozen nested slice from slices.json (step 10)")
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--no-judge", action="store_true")
     ap.add_argument("--rejudge", choices=["missing", "all"], default=None,
@@ -98,11 +100,13 @@ def main():
     ids = None
     if a.smoke:
         ids = smoke_ids()
+    elif a.slice:
+        ids = json.load(open(HERE / "slices.json"))["slices"][str(a.slice)]
     elif a.ids:
         j = json.load(open(a.ids)); ids = j["ids"] if isinstance(j, dict) else j
     entries = load_entries(ids=ids, limit=a.limit)
 
-    run_id = a.run_id or f"{a.system}_{a.backbone}" + ("_smoke" if a.smoke else "")
+    run_id = a.run_id or f"{a.system}_{a.backbone}" + ("_smoke" if a.smoke else f"_s{a.slice}" if a.slice else "")
     out = HERE / "runs" / run_id
     out.mkdir(parents=True, exist_ok=True)
 
@@ -200,7 +204,7 @@ def main():
 def rejudge(a):
     """Judge rows already in results.csv without re-answering (a run made with --no-judge, or
     a later re-judge). Rewrites the CSV in place; judge calls append to the same calls.jsonl."""
-    run_id = a.run_id or f"{a.system}_{a.backbone}" + ("_smoke" if a.smoke else "")
+    run_id = a.run_id or f"{a.system}_{a.backbone}" + ("_smoke" if a.smoke else f"_s{a.slice}" if a.slice else "")
     out = HERE / "runs" / run_id
     results_path = out / "results.csv"
     rows = list(csv.DictReader(results_path.open()))

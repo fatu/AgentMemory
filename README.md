@@ -32,6 +32,10 @@ experiments/
   locomo_audit/         token audits of the three datasets (question ids + counts only)
   longmemeval_audit/
   beam_audit/
+  swe_stream/           Part B on coding tasks: the same protocol with Claude Code as the agent —
+                        run_swe.py (loop), claude_cc.py (one episode = `claude -p … --bare
+                        --append-system-prompt-file memory.md`, stream-json parsed), harness_api.py
+                        (the harness contract + a minimal example: task.json + workspace/ + grade.sh)
 code-repo/              (not tracked) vendored benchmark repos, see below
 ```
 
@@ -83,6 +87,18 @@ cd experiments/part_a/locomo      && python run_locomo.py --conv conv-26 --syste
 cd experiments/part_a/longmemeval && python run_lme.py --system mem0 --backbone qwen27b --smoke
 cd experiments/part_a/beam        && python run_beam.py --group 100K --conv 1 --system bm25 --backbone sonnet5
 ```
+
+Execution stream (any task set that fits the harness contract; see `swe_stream/harness_api.py`):
+
+```bash
+cd experiments/swe_stream
+python run_swe.py --tasks-dir /path/to/tasks --harness harness_api --system dc --backbone qwen27b \
+    --claude-bin claude --cc-model <served-name> --seed 0
+```
+
+Claude Code runs with `--bare` (no hooks, no CLAUDE.md, no built-in auto-memory) so the only
+state carried across episodes is the memory system under test; the harness's `grade()` returns
+the binary outcome plus the failing stage and a log tail, which is the feedback `evolve()` sees.
 
 Each run writes `runs/<run_id>/{results.csv, calls.jsonl, provenance.json}` plus the
 benchmark's own output layout (`predictions.json`, `hypotheses.jsonl`, `answers.json`) so
