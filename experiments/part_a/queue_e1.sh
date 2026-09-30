@@ -4,6 +4,7 @@
 #   ./queue_e1.sh night1     # LoCoMo all convs × all systems · LongMemEval full/bm25 500 · BEAM-100K full/bm25 20 convs
 #   ./queue_e1.sh night2     # LongMemEval mem0 500 (12 shards) · BEAM-100K mem0 20 convs
 #   ./queue_e1.sh night3     # LongMemEval amem/hindsight 150 (6 shards each) · BEAM-100K amem/hindsight · BEAM-1M convs 1-5
+#   ./queue_e1.sh amem       # LoCoMo A-MEM on Qwen, 10 convs (moved out of night1 2026-09-30; run after night3)
 #   ./queue_e1.sh judge      # Sonnet judge on judged sets with missing scores (BEAM convs 11-20 stay unjudged by design)
 #   DRY=1 ./queue_e1.sh night1   # print the commands instead of running them
 #
@@ -35,7 +36,7 @@ beam100k() { beam_cmds 100K "$1" 1 10 "" ; beam_cmds 100K "$1" 11 20 "--no-judge
 
 case "${1:-}" in
 night1)
-  for s in full bm25 mem0 amem; do echo "[$(date +%H:%M)] LoCoMo $s"; locomo_cmds $s | par; done
+  for s in full bm25 mem0; do echo "[$(date +%H:%M)] LoCoMo $s"; locomo_cmds $s | par; done   # amem → its own step
   if hs_up; then for s in hindsight hindsight-reflect; do echo "[$(date +%H:%M)] LoCoMo $s"; locomo_cmds $s | par; done
   else echo "  !! Hindsight server down — LoCoMo hindsight rows skipped (rerun night1 later; done rows resume)"; fi
   (cd longmemeval && python3 shard_ids.py --all --n 8 --tag full_qwen27b >/dev/null && python3 shard_ids.py --all --n 8 --tag bm25_qwen27b >/dev/null)
@@ -55,11 +56,13 @@ night3)
   else echo "  !! Hindsight server down — hindsight rows skipped"; fi
   for s in bm25 full mem0; do echo "[$(date +%H:%M)] BEAM-1M $s (convs 1-5)"; beam_cmds 1M $s 1 5 "" | par 3; done   # frozen D3: no A-MEM on 1M
   if hs_up; then echo "[$(date +%H:%M)] BEAM-1M hindsight"; beam_cmds 1M hindsight 1 5 "" | par 3; fi ;;
+amem)
+  echo "[$(date +%H:%M)] LoCoMo amem"; locomo_cmds amem | par ;;
 judge)
   for d in longmemeval/runs/*_qwen27b*; do [ -f "$d/results.csv" ] || continue; r=$(basename "$d"); s=${r%%_*}
     echo "cd longmemeval && python3 run_lme.py --system $s --backbone qwen27b --run-id $r --rejudge missing > ../$LOG/judge_$r.log 2>&1"; done | par 4
   for c in $(seq 1 10); do for s in full bm25 mem0 amem hindsight; do [ -f "beam/runs/100K-${c}_${s}_qwen27b/results.csv" ] || continue
     echo "cd beam && python3 run_beam.py --group 100K --conv $c --system $s --backbone qwen27b --rejudge missing > ../$LOG/judge_beam100k_${c}_$s.log 2>&1"; done; done | par 4 ;;
-*) echo "usage: $0 night1|night2|night3|judge   (DRY=1 to print)"; exit 1 ;;
+*) echo "usage: $0 night1|night2|night3|amem|judge   (DRY=1 to print)"; exit 1 ;;
 esac
 echo "[$(date +%H:%M)] ${1} done — python3 rollup.py for the tables"
