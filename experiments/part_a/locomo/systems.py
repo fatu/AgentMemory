@@ -59,13 +59,18 @@ class Mem0:
 
     def __init__(self, client, embedder, state_dir: Path, cap: int = CAP):
         from memory.mem0_adapter import Mem0Memory
+        self._Mem0, self.embedder, self.state_dir = Mem0Memory, embedder, Path(state_dir)
         self.m = Mem0Memory(client, embedder, state_dir=state_dir)
         self.client = client
         self.cap = cap
 
     def ingest(self, conv):
-        if self.m.load():                                   # resume: sessions already ingested
+        if self.m.load():                                   # resume: ingestion finished earlier (n_added written last)
             return
+        if (self.state_dir / "faiss").exists():             # a crash mid-ingestion left a partial store: start clean,
+            import shutil                                   # or the re-ingest would add every session twice
+            shutil.rmtree(self.state_dir)
+            self.m = self._Mem0(self.client, self.embedder, state_dir=self.state_dir)
         speaker_a = conv["conversation"]["speaker_a"]
         for i in session_ids(conv):
             self.client.current_row_id = f"ingest:s{i}"
