@@ -84,6 +84,32 @@ class Mem0:
         return -1                                           # read from calls.jsonl (tag=memory, row ingest:*)
 
 
+class AMem:
+    """A-MEM as shipped (step-6 adapter): one note per session (official session text with its
+    date); store per conversation under runs/<run>/amem.pkl."""
+    name = "amem"
+    uses_cache = False
+
+    def __init__(self, client, embedder, state_dir: Path, cap: int = CAP):
+        from memory.amem_adapter import AMemMemory
+        self.m = AMemMemory(client, embedder, state_path=Path(state_dir) / "amem.pkl", cap=cap)
+        self.client = client
+
+    def ingest(self, conv):
+        if self.m.load():                                   # resume: notes already added
+            return
+        for i in session_ids(conv):
+            self.client.current_row_id = f"ingest:s{i}"
+            self.m.ams.add_note(session_text(conv, i), time=conv["conversation"][f"session_{i}_date_time"])
+        self.m.dump()
+
+    def context_for(self, question):
+        return self.m.retrieve(question)
+
+    def ingest_calls(self):
+        return -1
+
+
 class Hindsight:
     """Hindsight (step 9b): one bank per conversation, one retain() per session (official
     session text, session date as the event timestamp). `hindsight` = recall() fitted under
@@ -129,6 +155,9 @@ def make_system(name: str, *, client=None, embedder=None, state_dir: Path | None
     if name == "mem0":
         assert client is not None and embedder is not None and state_dir is not None
         return Mem0(client, embedder, state_dir)
+    if name == "amem":
+        assert client is not None and embedder is not None and state_dir is not None
+        return AMem(client, embedder, Path(state_dir).parent / "amem")
     if name in ("hindsight", "hindsight-reflect"):
         assert client is not None and state_dir is not None
         # marker keyed by bank id, shared across run ids: the recall and reflect rows reuse one bank

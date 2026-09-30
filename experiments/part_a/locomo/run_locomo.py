@@ -90,7 +90,7 @@ def _ingest_calls_from_log(path: Path) -> list[dict]:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--conv", default="conv-26")
-    ap.add_argument("--system", choices=["full", "bm25", "mem0", "hindsight", "hindsight-reflect"], required=True)
+    ap.add_argument("--system", choices=["full", "bm25", "mem0", "amem", "hindsight", "hindsight-reflect"], required=True)
     ap.add_argument("--backbone", choices=["sonnet5", "qwen27b"], required=True)
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--no-judge", action="store_true")
@@ -104,7 +104,7 @@ def main():
 
     client = LLMClient(a.backbone, run_id=run_id, log_path=out / "calls.jsonl")
     judge_client = client if a.backbone == JUDGE_BACKBONE else LLMClient(JUDGE_BACKBONE, run_id=run_id, log_path=out / "calls.jsonl")
-    embedder = Embedder() if a.system == "mem0" else None
+    embedder = Embedder() if a.system in ("mem0", "amem") else None
     system = make_system(a.system, client=client, embedder=embedder, state_dir=out / "mem0",
                          bank_id=f"locomo-{a.conv}-{a.backbone}")
 

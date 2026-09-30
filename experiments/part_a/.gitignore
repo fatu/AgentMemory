@@ -5,3 +5,6 @@ longmemeval/__pycache__/
 beam/runs/
 beam/__pycache__/
 runs/
+tables/
+logs/
+longmemeval/shards/
