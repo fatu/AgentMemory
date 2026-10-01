@@ -18,7 +18,8 @@ LOG=logs; mkdir -p $LOG longmemeval/shards
 hs_up() { curl -sf "${HINDSIGHT_URL:-http://localhost:8888}/health" >/dev/null 2>&1 || curl -sf "${HINDSIGHT_URL:-http://localhost:8888}/version" >/dev/null 2>&1; }
 par() {   # run the command lines on stdin, P at a time (DRY=1 → print)
   local n=${1:-$P}
-  if [ "${DRY:-0}" = "1" ]; then cat; else xargs -P "$n" -I{} bash -c '{}'; fi
+  # NUL-separated, one command per bash: no `xargs -I` (BSD/macOS caps -I lines at 255 bytes)
+  if [ "${DRY:-0}" = "1" ]; then cat; else tr '\n' '\0' | xargs -0 -n 1 -P "$n" bash -c; fi
 }
 LOCOMO_CONVS=$(python3 -c "import json,os;p=os.environ.get('LOCOMO_PATH','../../code-repo/locomo')+'/data/locomo10.json';print(' '.join(x['sample_id'] for x in json.load(open(p))))")
 
