@@ -54,15 +54,21 @@ def _save(fig, name):
 # ---------------------------------------------------------------- f1 LoCoMo: judge vs F1
 def f1():
     df = pd.read_csv(T / "locomo.csv")
-    df = df[df["convs"] >= 10]                                   # full runs only
     systems = _order(df["system"]); x = np.arange(len(systems)); w = 0.2
-    fig, ax = plt.subplots(figsize=(9, 4.2))
+    fig, ax = plt.subplots(figsize=(9.5, 4.4))
     for i, (bb, col) in enumerate([("sonnet5", "cat1-4_judge"), ("qwen27b", "cat1-4_judge"), ("sonnet5", "cat1-4_off"), ("qwen27b", "cat1-4_off")]):
-        vals = [df[(df.system == s) & (df.backbone == bb)][col].mean() for s in systems]
-        hatch = "" if "judge" in col else "//"
-        ax.bar(x + (i - 1.5) * w, vals, w, color=("#d62728" if bb == "sonnet5" else "#1f77b4"), alpha=(0.9 if "judge" in col else 0.45),
-               hatch=hatch, edgecolor="white", label=f"{BB[bb]} · {'judge' if 'judge' in col else 'official F1'}")
-    ax.set_xticks(x); ax.set_xticklabels(systems); ax.set_ylim(0, 1); ax.set_ylabel("LoCoMo cat 1–4, 10 conversations")
+        color = "#d62728" if bb == "sonnet5" else "#1f77b4"
+        for j, s in enumerate(systems):
+            r = df[(df.system == s) & (df.backbone == bb)]
+            if r.empty:
+                continue
+            partial = int(r["convs"].iloc[0]) < 10
+            ax.bar(x[j] + (i - 1.5) * w, r[col].iloc[0], w, color=color, alpha=(0.9 if "judge" in col else 0.45) * (0.5 if partial else 1),
+                   hatch=("" if "judge" in col else "//"), edgecolor="white",
+                   label=(f"{BB[bb]} · {'judge' if 'judge' in col else 'official F1'}" if j == 0 else None))
+            if partial:
+                ax.text(x[j] + (i - 1.5) * w, r[col].iloc[0] + 0.01, f"{int(r['convs'].iloc[0])} conv", ha="center", fontsize=6, rotation=90, va="bottom")
+    ax.set_xticks(x); ax.set_xticklabels(systems); ax.set_ylim(0, 1.08); ax.set_ylabel("LoCoMo cat 1–4 (10 conversations unless marked)")
     ax.set_title("Two scorers, two backbone rankings: the judge puts Sonnet first, the F1 puts Qwen first")
     ax.legend(fontsize=8, ncol=2); ax.grid(axis="y", alpha=0.3)
     _save(fig, "f1_locomo_scorers")
@@ -123,19 +129,26 @@ def f4():
         fig, axes = plt.subplots(1, len(streams), figsize=(4.2 * len(streams), 3.8), sharey=False)
         axes = np.atleast_1d(axes)
         for ax, st in zip(axes, streams):
+            start = 50 if st.startswith("mmlu") or st == "gpqa_diamond" else 10
+            finals = []
             for s in _order(d[d.stream == st].system):
                 g = d[(d.stream == st) & (d.system == s)]
                 curves = []
                 for seed, gs in g.groupby("seed"):
                     gs = gs.sort_values("position"); curves.append(np.cumsum(gs["correct"].to_numpy()) / (np.arange(len(gs)) + 1))
-                n = min(map(len, curves)); stack = np.vstack([c[:n] for c in curves])
-                ax.plot(np.arange(1, n + 1), stack.mean(0), color=COL[s], lw=1.6, label=f"{s}" + (f" ({len(curves)} orders)" if len(curves) > 1 else ""))
-                if len(curves) > 1:
-                    ax.fill_between(np.arange(1, n + 1), stack.min(0), stack.max(0), color=COL[s], alpha=0.1, lw=0)
-            ax.set_title(STREAM[st], fontsize=10); ax.set_xlabel("position in stream"); ax.grid(alpha=0.3)
-            lo = max(0.4, ax.get_ylim()[0]); ax.set_xlim(20, None); ax.set_ylim(lo, 1.0)
-        axes[0].set_ylabel("cumulative accuracy"); axes[0].legend(fontsize=7)
-        fig.suptitle(f"Learning curves on {BB[bb]} — flat for every memory system", y=1.02)
+                n = min(map(len, curves)); stack = np.vstack([c[:n] for c in curves]); m = stack.mean(0)
+                xs = np.arange(1, n + 1); keep = xs >= start
+                style = dict(color="black", lw=2.2, ls="--", zorder=5) if s == "none" else dict(color=COL[s], lw=1.9)
+                ax.plot(xs[keep], m[keep], label=f"{s}" + (f" ({len(curves)} orders)" if len(curves) > 1 else ""), **style)
+                if len(curves) > 1 and s != "none":
+                    ax.fill_between(xs[keep], stack.min(0)[keep], stack.max(0)[keep], color=COL[s], alpha=0.08, lw=0)
+                finals += list(m[keep])
+            ax.set_title(STREAM[st], fontsize=10); ax.set_xlabel(f"position in stream (from {start})"); ax.grid(alpha=0.3)
+            lo, hi = min(finals), max(finals); pad = (hi - lo) * 0.25 + 0.01
+            ax.set_xlim(start, None); ax.set_ylim(lo - pad, hi + pad)
+        axes[0].set_ylabel("cumulative accuracy"); axes[-1].legend(fontsize=7, loc="lower right")
+        fig.suptitle(f"Learning curves on {BB[bb]} — flat for every memory system (dashed black = no memory)", y=0.99)
+        fig.subplots_adjust(top=0.82)
         _save(fig, f"f4_curves_{bb}")
 
 
