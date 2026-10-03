@@ -5,6 +5,12 @@
     python kappa_slice.py report              # κ: human vs judge, human vs official F1; per backbone
     python kappa_slice.py rejudge             # re-run the Sonnet judge on the slice → judge–judge κ (~$0.3)
 
+Failure taxonomy (E4, blog §6.2), same runs, no API spend:
+    python kappa_slice.py fail-sample         # 50 judge-WRONG answers per system → kappa/failures.jsonl (needs the
+                                              #   Mem0 stores in runs/ and the embedder; rebuilds each retrieved block)
+    python kappa_slice.py tag                 # tag each failure by its cause (resumable)
+    python kappa_slice.py tag-report          # cause × system table
+
 Slice: cat 1-4 rows from runs/conv-*_{full,bm25,mem0}_{sonnet5,qwen27b}, N/2 per backbone,
 and within each backbone half judge-CORRECT / half judge-WRONG (balanced so κ is not computed on
 a 90 %-correct sample; raw agreement on a balanced slice is NOT the population agreement — the
@@ -17,6 +23,7 @@ from __future__ import annotations
 import argparse
 import csv
 import glob
+import json
 import random
 import sys
 from collections import defaultdict
@@ -25,6 +32,14 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 OUT = HERE / "kappa"
 SLICE, LABELS, REJUDGE = OUT / "slice.csv", OUT / "labels.csv", OUT / "rejudge.csv"
+FAILS, TAGS = OUT / "failures.jsonl", OUT / "tags.csv"
+CAUSES = {                       # key → cause; ordered from "memory never had it" to "the scorer was wrong"
+    "n": "not in context",       # the evidence never reached the prompt (impossible for full context)
+    "m": "in context, misread",  # the evidence was in the prompt and the answer is still wrong
+    "t": "time / stale",         # wrong date arithmetic, relative date unresolved, or an outdated fact used
+    "f": "scorer / format",      # the answer is acceptable; the judge marked it wrong
+    "g": "gold wrong",           # the reference answer itself is wrong or ambiguous
+}
 SYSTEMS, BACKBONES = ("full", "bm25", "mem0"), ("sonnet5", "qwen27b")
 F1_THRESHOLD = 0.5
 
@@ -162,6 +177,116 @@ def cmd_report(a):
               f"flips={sum(x != y for x, y in zip(j1, j2))}")
 
 
+def _evidence(conv, ids):
+    by_id = {d["dia_id"]: d for d in conv.get("_docs", [])}
+    return [by_id[i]["text"] for i in ids if i in by_id]
+
+
+def cmd_fail_sample(a):
+    sys.path.insert(0, str(HERE.parent / "stream_runner")); sys.path.insert(0, str(HERE / "locomo"))
+    from locomo_data import load_conversation, turns_as_documents
+    rows = [r for r in _rows() if r["backbone"] == a.backbone and r["judge"] == 0]
+    rng = random.Random(a.seed)
+    picked = []
+    for s in SYSTEMS:
+        pool = [r for r in rows if r["system"] == s]
+        rng.shuffle(pool)
+        picked += pool[:a.per]
+        print(f"{s}: {min(a.per, len(pool))} of {len(pool)} judge-WRONG answers ({a.backbone})")
+    rng.shuffle(picked)                                   # tag in mixed order
+    convs, blocks = {}, {}
+    for r in picked:
+        if r["conv"] not in convs:
+            c = load_conversation(r["conv"]); c["_docs"] = turns_as_documents(c); convs[r["conv"]] = c
+    for r in picked:                                      # rebuild the block each system actually showed
+        key = (r["conv"], r["system"])
+        if r["system"] == "full" or key in blocks:
+            continue
+        from systems import make_system
+        conv = convs[r["conv"]]
+        if r["system"] == "bm25":
+            sysm = make_system("bm25")
+        else:
+            from client import LLMClient
+            from embed import Embedder
+            run = HERE / "locomo" / "runs" / f"{r['conv']}_mem0_{a.backbone}"
+            sysm = make_system("mem0", client=LLMClient(a.backbone, run_id="fail_sample", log_path=OUT / "calls.jsonl"),
+                               embedder=Embedder(), state_dir=run / "mem0")
+            assert sysm.m.load(), f"no finished Mem0 store in {run}/mem0"
+        if r["system"] == "bm25":
+            sysm.ingest(conv)
+        blocks[key] = sysm
+    OUT.mkdir(exist_ok=True)
+    with FAILS.open("w") as f:
+        for i, r in enumerate(picked):
+            conv = convs[r["conv"]]
+            qa = conv["qa"][int(r["qa_idx"])]
+            ev = _evidence(conv, qa.get("evidence", []))
+            block = "" if r["system"] == "full" else blocks[(r["conv"], r["system"])].context_for(qa["question"])
+            f.write(json.dumps({"item": i, "conv": r["conv"], "qa_idx": r["qa_idx"], "category": r["category"],
+                                "system": r["system"], "question": qa["question"], "gold": r["gold"], "pred": r["pred"],
+                                "evidence": ev, "block": block,
+                                "evidence_in_block": (None if r["system"] == "full" else
+                                                      all(e.split(": ", 1)[-1] in block for e in ev) if ev else None)}) + "\n")
+    print(f"wrote {len(picked)} failures → {FAILS}")
+
+
+def cmd_tag(a):
+    items = [json.loads(l) for l in FAILS.open()]
+    done = {r["item"]: r["cause"] for r in csv.DictReader(TAGS.open())} if TAGS.exists() else {}
+    order = [r for r in items if str(r["item"]) not in done]
+    keys = " · ".join(f"{k} = {v}" for k, v in CAUSES.items())
+    print(f"{len(done)}/{len(items)} tagged. {keys} · s = skip · u = undo · q = quit\n")
+    history, i = [], 0
+    while i < len(order):
+        r = order[i]
+        print(f"── {len(done) + 1}/{len(items)} · {r['system']} · cat {r['category']} ─────────────────────")
+        print(f"Q:        {r['question']}\nGOLD:     {r['gold']}\nANSWER:   {r['pred']}")
+        print("EVIDENCE: " + ("\n          ".join(r["evidence"]) or "(none listed)"))
+        if r["system"] == "full":
+            print("CONTEXT:  whole conversation (so \"not in context\" does not apply)")
+        else:
+            auto = {True: "yes", False: "NO", None: "?"}[r["evidence_in_block"]]
+            lines = [l for l in r["block"].splitlines() if l.strip()]
+            print(f"BLOCK:    evidence turns verbatim in block: {auto}  ({len(lines)} lines; first {a.show})")
+            for l in lines[:a.show]:
+                print(f"          {l[:200]}")
+        try:
+            k = input(f"cause [{'/'.join(CAUSES)}/s/u/q] > ").strip().lower()
+        except EOFError:
+            break
+        if k == "q":
+            break
+        if k == "u" and history:
+            done.pop(history.pop(), None); i -= 1
+        elif k in CAUSES:
+            done[str(r["item"])] = k; history.append(str(r["item"])); i += 1
+        elif k == "s":
+            i += 1
+        with TAGS.open("w", newline="") as f:
+            w = csv.writer(f); w.writerow(["item", "cause"]); w.writerows(done.items())
+    print(f"\n{len(done)}/{len(items)} tagged → {TAGS}")
+
+
+def cmd_tag_report(a):
+    items = {str(r["item"]): r for r in (json.loads(l) for l in FAILS.open())}
+    tags = {r["item"]: r["cause"] for r in csv.DictReader(TAGS.open())}
+    print(f"{len(tags)} tagged failures; each cell = share of that system's tagged failures\n")
+    print(f"  {'cause':<22}" + "".join(f"{s:>10}" for s in SYSTEMS))
+    for k, name in CAUSES.items():
+        cells = []
+        for s in SYSTEMS:
+            ids = [i for i in tags if items[i]["system"] == s]
+            cells.append(f"{sum(tags[i] == k for i in ids) / len(ids):>10.0%}" if ids else f"{'—':>10}")
+        print(f"  {name:<22}" + "".join(cells))
+    print(f"  {'n tagged':<22}" + "".join(f"{sum(items[i]['system'] == s for i in tags):>10}" for s in SYSTEMS))
+    auto = [(items[i]["evidence_in_block"], tags[i]) for i in tags if items[i]["evidence_in_block"] is not None]
+    if auto:
+        agree = sum((e is False) == (c == "n") for e, c in auto)
+        print(f"\nverbatim-evidence check vs your \"not in context\" tag (bm25/mem0): agree on {agree}/{len(auto)} "
+              f"(Mem0 stores rewritten facts, so its automatic check is expected to say NO often)")
+
+
 def cmd_rejudge(a):
     sys.path.insert(0, str(HERE.parent / "stream_runner")); sys.path.insert(0, str(HERE / "locomo"))
     from client import LLMClient
@@ -180,8 +305,12 @@ def cmd_rejudge(a):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["sample", "label", "report", "rejudge"])
+    ap.add_argument("cmd", choices=["sample", "label", "report", "rejudge", "fail-sample", "tag", "tag-report"])
     ap.add_argument("--n", type=int, default=100)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--per", type=int, default=50, help="fail-sample: failures per system")
+    ap.add_argument("--backbone", default="qwen27b", choices=BACKBONES, help="fail-sample: whose failures")
+    ap.add_argument("--show", type=int, default=12, help="tag: block lines to print")
     a = ap.parse_args()
-    {"sample": cmd_sample, "label": cmd_label, "report": cmd_report, "rejudge": cmd_rejudge}[a.cmd](a)
+    {"sample": cmd_sample, "label": cmd_label, "report": cmd_report, "rejudge": cmd_rejudge,
+     "fail-sample": cmd_fail_sample, "tag": cmd_tag, "tag-report": cmd_tag_report}[a.cmd](a)
