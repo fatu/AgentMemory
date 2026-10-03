@@ -8,3 +8,4 @@ experiments/part_a/*/runs/
 **/__pycache__/
 *.pyc
 .venv/
+figures/
