@@ -167,9 +167,12 @@ def f5():
         for i, s in enumerate(systems):
             ax.bar(x + (i - (len(systems) - 1) / 2) * w, [d.loc[st, s] for st in streams], w, color=COL[s], label=s)
         ax.set_xticks(x); ax.set_xticklabels([STREAM[s] for s in streams], fontsize=9)
-        ax.set_ylabel("final accuracy (orders averaged)"); ax.set_ylim(0.5, 0.95); ax.grid(axis="y", alpha=0.3)
-        ax.set_title(f"{BB[bb]}: dc ≈ dc-frozen (its own final sheet, never updated) — the gain is advice, not learning")
-        ax.legend(fontsize=8, ncol=4, loc="lower left")
+        vals = [d.loc[st, s] for st in streams for s in systems]
+        ax.set_ylabel("final accuracy (orders averaged)"); ax.set_ylim(min(vals) - 0.04, max(vals) + 0.03); ax.grid(axis="y", alpha=0.3)
+        for st_i, st in enumerate(streams):                      # dashed reference = no memory
+            ax.hlines(d.loc[st, "none"], st_i - 0.42, st_i + 0.42, colors="black", linestyles="--", lw=1.2, zorder=4)
+        ax.set_title(f"{BB[bb]}: dc ≈ dc-frozen (its own final sheet, never updated)\n— the gain is advice, not learning (dashed = no memory)", fontsize=10)
+        ax.legend(fontsize=8, ncol=4, loc="upper right" if bb == "qwen27b" else "lower right")
         _save(fig, f"f5_static_vs_learned_{bb}")
 
 
