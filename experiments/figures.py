@@ -200,18 +200,20 @@ def f6():
 
 # ---------------------------------------------------------------- f7 cost
 def f7():
-    lo = pd.read_csv(T / "locomo.csv"); lo = lo[lo.convs >= 10]
+    lo = pd.read_csv(T / "locomo.csv"); lo = lo[lo.system != "hindsight-reflect"]   # its own reader: not a block-under-the-cap point
     lm = pd.read_csv(T / "longmemeval.csv"); lm = lm[lm.n >= 150]
     fig, axes = plt.subplots(1, 2, figsize=(10, 4))
     for ax, df, ycol, title in ((axes[0], lo, "cat1-4_judge", "LoCoMo (judge, cat 1–4)"), (axes[1], lm, "task_avg", "LongMemEval-S (judge, task-avg)")):
         for _, r in df.iterrows():
             m = "o" if r.backbone == "sonnet5" else "s"
-            ax.scatter(r["agent_in"], r[ycol], color=COL.get(r.system, "k"), marker=m, s=60, zorder=3)
-            ax.annotate(r.system, (r["agent_in"], r[ycol]), fontsize=7, xytext=(4, 3), textcoords="offset points")
+            partial = "convs" in r and int(r["convs"]) < 10
+            ax.scatter(r["agent_in"], r[ycol], facecolors=("none" if partial else COL.get(r.system, "k")), edgecolors=COL.get(r.system, "k"),
+                       marker=m, s=60, zorder=3, linewidths=1.5)
+            ax.annotate(r.system + (f" ({int(r['convs'])} conv)" if partial else ""), (r["agent_in"], r[ycol]), fontsize=7, xytext=(4, 3), textcoords="offset points")
         ax.set_xscale("log"); ax.set_xlabel("input tokens per question (log)"); ax.set_title(title); ax.grid(alpha=0.3)
     axes[0].set_ylabel("accuracy")
     axes[0].scatter([], [], marker="o", color="k", label="Sonnet"); axes[0].scatter([], [], marker="s", color="k", label="Qwen"); axes[0].legend(fontsize=8)
-    fig.suptitle("Accuracy vs. what the answer costs to read (ingestion not included)", y=1.02)
+    fig.suptitle("Accuracy vs. what the answer costs to read (ingestion not included; hollow = partial coverage)", y=1.02)
     _save(fig, "f7_cost")
 
 
