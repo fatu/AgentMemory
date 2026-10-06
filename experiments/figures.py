@@ -47,7 +47,7 @@ def _order(systems):
 
 def _save(fig, name):
     OUT.mkdir(exist_ok=True)
-    fig.tight_layout(); fig.savefig(OUT / f"{name}.png", dpi=150); plt.close(fig)
+    fig.tight_layout(); fig.savefig(OUT / f"{name}.png", dpi=150, bbox_inches="tight"); plt.close(fig)   # tight: no clipped titles
     print("wrote", OUT / f"{name}.png")
 
 
@@ -163,16 +163,16 @@ def f5():
         if not streams or not systems:
             continue
         x = np.arange(len(streams)); w = 0.8 / len(systems)
-        fig, ax = plt.subplots(figsize=(8.5, 4))
+        fig, ax = plt.subplots(figsize=(9.5, 4))
         for i, s in enumerate(systems):
             ax.bar(x + (i - (len(systems) - 1) / 2) * w, [d.loc[st, s] for st in streams], w, color=COL[s], label=s)
         ax.set_xticks(x); ax.set_xticklabels([STREAM[s] for s in streams], fontsize=9)
         vals = [d.loc[st, s] for st in streams for s in systems]
-        ax.set_ylabel("final accuracy (orders averaged)"); ax.set_ylim(min(vals) - 0.04, max(vals) + 0.03); ax.grid(axis="y", alpha=0.3)
+        ax.set_ylabel("final accuracy" + (" (orders averaged)" if bb == "qwen27b" else " (one order)")); ax.set_ylim(min(vals) - 0.04, max(vals) + 0.03); ax.grid(axis="y", alpha=0.3)
         for st_i, st in enumerate(streams):                      # dashed reference = no memory
             ax.hlines(d.loc[st, "none"], st_i - 0.42, st_i + 0.42, colors="black", linestyles="--", lw=1.2, zorder=4)
         ax.set_title(f"{BB[bb]}: dc ≈ dc-frozen (its own final sheet, never updated)\n— the gain is advice, not learning (dashed = no memory)", fontsize=10)
-        ax.legend(fontsize=8, ncol=4, loc="upper right" if bb == "qwen27b" else "lower right")
+        ax.legend(fontsize=8, loc="center left", bbox_to_anchor=(1.01, 0.5), frameon=False)   # outside: never covers a bar
         _save(fig, f"f5_static_vs_learned_{bb}")
 
 
@@ -197,7 +197,7 @@ def f6():
     ax.bar(x + 0.18, [r[2] for r in rows], 0.36, color="#1f77b4", label="official F1 ≥ 0.5")
     ax.set_xticks(x); ax.set_xticklabels(["all 98", "Sonnet answers", "Qwen answers"]); ax.set_ylim(0, 1)
     ax.set_ylabel("Cohen's κ vs blind human labels"); ax.grid(axis="y", alpha=0.3); ax.legend(fontsize=8)
-    ax.set_title("Which scorer to trust: the judge agrees with a human more than the F1 does,\nand no more on Sonnet's answers than on Qwen's")
+    ax.set_title("Which scorer to trust: the judge agrees with\nblind human labels more than the official F1 does")
     _save(fig, "f6_judge_kappa")
 
 
