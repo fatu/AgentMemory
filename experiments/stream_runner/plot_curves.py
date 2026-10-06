@@ -30,6 +30,8 @@ COLORS = {"none": "#7f7f7f", "exprag": "#1f77b4", "dc": "#d62728", "dc-frozen": 
 def load_runs(runs_glob: str, min_rows: int) -> pd.DataFrame:
     frames = []
     for d in sorted(glob.glob(runs_glob)):
+        if "-x" in Path(d).name:                             # cross-domain controls (*_dcfrozen-xphil_*): reported in
+            continue                                         # the text, not averaged into the same-domain row
         p = next((Path(d) / n for n in ("results.csv", "result.csv") if (Path(d) / n).exists()), None)
         if p is None:
             continue

@@ -115,6 +115,8 @@ def f4():
     runs = HERE / "stream_runner" / "runs"
     frames = []
     for d in sorted(runs.glob("*")):
+        if "-x" in d.name:                                   # cross-domain controls (*_dcfrozen-xphil_*) share the
+            continue                                         # same stream/system/seed: they'd be glued onto the curve
         p = next((d / n for n in ("results.csv", "result.csv") if (d / n).exists()), None)
         if p:
             df = pd.read_csv(p)
